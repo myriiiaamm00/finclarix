@@ -1,4 +1,4 @@
-# FinClariX 🔍
+# FinClariX 
 
 > Finance that sticks, minus the tricks.
 
