@@ -22,7 +22,10 @@ st.set_page_config(
 )
 
 # ── Session state defaults ────────────────────────────────────────────────────
-_LANGUAGES = ["English", "French", "Spanish", "German", "Dutch", "Mandarin Chinese"]
+_LANGUAGES = [
+    "English", "Spanish", "Dutch", "French", "German", "Italian",
+    "Portuguese", "Polish", "Romanian", "Swedish", "Czech", "Hungarian", "Greek",
+]
 
 for _k, _v in [("settings_open", False), ("language", "English"), ("use_ai", True), ("api_key", "")]:
     if _k not in st.session_state:
@@ -45,7 +48,7 @@ _CSS = """
 
 /* ── Page ────────────────────────────────────────────────── */
 .stApp, [data-testid="stAppViewContainer"],
-[data-testid="stHeader"] { background: #FFFFFF !important; }
+[data-testid="stHeader"] { background: #EDE8DC !important; }
 .block-container { padding: 0 2.5rem 5rem !important; max-width: 1100px !important; }
 
 /* ── Header area ─────────────────────────────────────────── */
@@ -405,7 +408,7 @@ details.clause-card > summary:hover { color: #1A1A1A; }
 
 /* ── Scrollbar ───────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #FFFFFF; }
+::-webkit-scrollbar-track { background: #EDE8DC; }
 ::-webkit-scrollbar-thumb { background: #C8E0D0; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #8BBD9A; }
 """
@@ -417,10 +420,12 @@ st.markdown(f"<style>{_CSS}</style>", unsafe_allow_html=True)
 
 def _logo_tag(width: int = 56) -> str:
     if os.path.exists("logo.png"):
+        mtime = int(os.path.getmtime("logo.png"))
         with open("logo.png", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
         return (
             f'<img src="data:image/png;base64,{b64}" width="{width}" '
+            f'data-v="{mtime}" '
             f'style="display:block;object-fit:contain;margin:0 auto;" alt="FinClariX">'
         )
     fs = width // 2
@@ -519,9 +524,9 @@ with hdr_center:
 
 st.markdown('<div class="divider-line"></div>', unsafe_allow_html=True)
 
-# ── Layout: main content + optional right settings panel ─────────────────────
+# ── Layout: optional left settings panel + main content ──────────────────────
 if st.session_state.settings_open:
-    main_col, panel_col = st.columns([3, 1], gap="large")
+    panel_col, main_col = st.columns([1, 3], gap="large")
 else:
     main_col = st.container()
     panel_col = None
