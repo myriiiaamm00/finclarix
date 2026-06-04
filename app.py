@@ -18,67 +18,105 @@ st.set_page_config(
     page_title="FinClariX",
     page_icon="📋",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
+
+# ── Session state defaults ────────────────────────────────────────────────────
+_LANGUAGES = ["English", "French", "Spanish", "German", "Dutch", "Mandarin Chinese"]
+
+for _k, _v in [("settings_open", False), ("language", "English"), ("use_ai", True), ("api_key", "")]:
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
+
+# Restore API key from session so it survives reruns
+if st.session_state.api_key:
+    os.environ["ANTHROPIC_API_KEY"] = st.session_state.api_key
+
+# Read current settings (updated below if panel is open)
+_lang = st.session_state.language
+_use_ai = st.session_state.use_ai
 
 # ── Stylesheet ────────────────────────────────────────────────────────────────
 _CSS = """
-/* ── Layout ──────────────────────────────────────────────── */
-.block-container { max-width: 880px !important; padding: 1.5rem 2.5rem 5rem !important; }
-
-/* ── Hide Streamlit chrome ───────────────────────────────── */
+/* ── Hide Streamlit chrome & sidebar ────────────────────── */
 #MainMenu, footer, [data-testid="stDecoration"],
-[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stToolbar"], section[data-testid="stSidebar"],
+[data-testid="collapsedControl"] { display: none !important; }
 
-/* ── Page background ─────────────────────────────────────── */
-.stApp, [data-testid="stAppViewContainer"] { background: #F5F0E8 !important; }
-[data-testid="stHeader"] { background: #F5F0E8 !important; border-bottom: 1px solid #E8E0D0; }
+/* ── Page ────────────────────────────────────────────────── */
+.stApp, [data-testid="stAppViewContainer"],
+[data-testid="stHeader"] { background: #FFFFFF !important; }
+.block-container { padding: 0 2.5rem 5rem !important; max-width: 1100px !important; }
 
-/* ── Brand header ────────────────────────────────────────── */
-.brand-header {
+/* ── Header area ─────────────────────────────────────────── */
+.page-header {
     display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 10px 0 6px;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 32px 0 20px;
 }
-.brand-name {
-    font-size: 1.75rem;
-    font-weight: 800;
-    color: #1A1A1A;
-    letter-spacing: -0.5px;
-    line-height: 1.1;
-    margin: 0;
-}
+.logo-block { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
 .brand-tagline {
-    font-size: 0.8rem;
-    color: #8B7355;
-    margin: 3px 0 0;
-    letter-spacing: 0.1px;
+    font-size: 0.82rem;
+    color: #4A7C59;
     font-style: italic;
+    margin: 6px 0 0;
+    letter-spacing: 0.05px;
 }
 .divider-line {
     height: 1px;
-    background: linear-gradient(90deg, #D8CFC0 0%, transparent 100%);
-    margin: 14px 0 22px;
+    background: linear-gradient(90deg, #C8E0D0 0%, transparent 80%);
+    margin: 0 0 28px;
 }
 
-/* ── Sidebar ─────────────────────────────────────────────── */
-section[data-testid="stSidebar"] {
-    background: #FFFFFF !important;
-    border-right: 1px solid #E8E0D0 !important;
+/* ── Hamburger button ────────────────────────────────────── */
+.menu-btn > div > button {
+    background: transparent !important;
+    border: 1.5px solid #C8E0D0 !important;
+    border-radius: 8px !important;
+    color: #4A7C59 !important;
+    font-size: 1.15rem !important;
+    font-weight: 400 !important;
+    padding: 7px 14px !important;
+    line-height: 1 !important;
+    transition: background 0.15s, border-color 0.15s;
 }
-.sidebar-section {
+.menu-btn > div > button:hover {
+    background: #E8F3EC !important;
+    border-color: #4A7C59 !important;
+}
+
+/* ── Settings panel ──────────────────────────────────────── */
+.settings-panel {
+    background: #FFFFFF;
+    border: 1px solid #C8E0D0;
+    border-radius: 12px;
+    padding: 20px 18px 24px;
+    position: sticky;
+    top: 16px;
+}
+.panel-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: #4A7C59;
+    margin: 0 0 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #E4F0E8;
+}
+.panel-section {
     font-size: 0.68rem !important;
     font-weight: 700 !important;
-    letter-spacing: 1.2px !important;
+    letter-spacing: 1px !important;
     text-transform: uppercase !important;
-    color: #8B7355 !important;
-    margin: 22px 0 8px !important;
+    color: #6B9E78 !important;
+    margin: 20px 0 8px !important;
 }
 .how-it-works {
     padding-left: 16px;
     margin: 0;
-    color: #7A7060;
+    color: #6B9E78;
     font-size: 0.8rem;
     line-height: 2.1;
 }
@@ -87,12 +125,12 @@ section[data-testid="stSidebar"] {
 .stTabs [data-baseweb="tab-list"] {
     gap: 0;
     background: transparent;
-    border-bottom: 1px solid #D8CFC0;
-    margin-bottom: 18px;
+    border-bottom: 1px solid #C8E0D0;
+    margin-bottom: 16px;
 }
 .stTabs [data-baseweb="tab"] {
     background: transparent !important;
-    color: #8B7355 !important;
+    color: #6B9E78 !important;
     font-weight: 500;
     font-size: 0.88rem;
     padding: 10px 20px;
@@ -107,19 +145,17 @@ section[data-testid="stSidebar"] {
 
 /* ── File uploader ───────────────────────────────────────── */
 [data-testid="stFileUploader"] {
-    background: #FFFFFF !important;
-    border: 1.5px dashed #C8BCA8 !important;
+    background: #F2F8F4 !important;
+    border: 1.5px dashed #A8D4B4 !important;
     border-radius: 10px !important;
     padding: 8px !important;
 }
-[data-testid="stFileUploader"]:hover {
-    border-color: #4A7C59 !important;
-}
+[data-testid="stFileUploader"]:hover { border-color: #4A7C59 !important; }
 
 /* ── Text area ───────────────────────────────────────────── */
 .stTextArea textarea {
-    background: #FFFFFF !important;
-    border: 1px solid #D0C8B8 !important;
+    background: #F2F8F4 !important;
+    border: 1px solid #C8E0D0 !important;
     border-radius: 8px !important;
     color: #1A1A1A !important;
     font-size: 0.85rem !important;
@@ -137,7 +173,6 @@ section[data-testid="stSidebar"] {
     border-radius: 8px !important;
     font-weight: 700 !important;
     font-size: 0.92rem !important;
-    letter-spacing: 0.15px;
     padding: 0.65rem 1.5rem !important;
     color: #FFFFFF !important;
     transition: background 0.15s, transform 0.1s;
@@ -150,30 +185,26 @@ section[data-testid="stSidebar"] {
 
 .stDownloadButton > button {
     background: #FFFFFF !important;
-    border: 1px solid #C8BCA8 !important;
+    border: 1.5px solid #C8E0D0 !important;
     border-radius: 8px !important;
-    color: #5A5040 !important;
+    color: #4A7C59 !important;
     font-weight: 600 !important;
     font-size: 0.88rem !important;
-    transition: border-color 0.15s, color 0.15s;
+    transition: border-color 0.15s, background 0.15s;
 }
 .stDownloadButton > button:hover {
     border-color: #4A7C59 !important;
-    color: #1A1A1A !important;
-    background: #F5F0E8 !important;
+    background: #F2F8F4 !important;
 }
 
 /* ── Selectbox & inputs ──────────────────────────────────── */
 [data-testid="stSelectbox"] > div > div,
 [data-testid="stTextInput"] > div > div > input {
-    background: #FFFFFF !important;
-    border-color: #D0C8B8 !important;
+    background: #F2F8F4 !important;
+    border-color: #C8E0D0 !important;
     border-radius: 8px !important;
     color: #1A1A1A !important;
 }
-
-/* ── Toggle ──────────────────────────────────────────────── */
-[data-testid="stToggle"] label { color: #3A3020 !important; }
 
 /* ── Alerts ──────────────────────────────────────────────── */
 [data-testid="stAlert"] { border-radius: 8px !important; font-size: 0.85rem; }
@@ -183,8 +214,8 @@ section[data-testid="stSidebar"] {
 
 /* ── Expander (PDF preview) ──────────────────────────────── */
 [data-testid="stExpander"] {
-    background: #FFFFFF !important;
-    border: 1px solid #D8CFC0 !important;
+    background: #F2F8F4 !important;
+    border: 1px solid #C8E0D0 !important;
     border-radius: 8px !important;
 }
 
@@ -194,7 +225,7 @@ section[data-testid="stSidebar"] {
     font-weight: 700;
     letter-spacing: 1.2px;
     text-transform: uppercase;
-    color: #8B7355;
+    color: #6B9E78;
     margin: 0 0 14px;
 }
 
@@ -207,13 +238,13 @@ section[data-testid="stSidebar"] {
 }
 .metric-card {
     background: #FFFFFF;
-    border: 1px solid #E8E0D0;
+    border: 1px solid #C8E0D0;
     border-radius: 12px;
     padding: 18px 14px 16px;
     text-align: center;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 1px 6px rgba(74,124,89,0.07);
 }
 .metric-card::after {
     content: '';
@@ -225,7 +256,7 @@ section[data-testid="stSidebar"] {
 .metric-high::after          { background: #DC2626; }
 .metric-medium::after        { background: #D97706; }
 .metric-low::after           { background: #4A7C59; }
-.metric-informational::after { background: #C8BCA8; }
+.metric-informational::after { background: #A8D4B4; }
 .metric-number {
     font-size: 2rem;
     font-weight: 800;
@@ -236,10 +267,10 @@ section[data-testid="stSidebar"] {
 .metric-num-high          { color: #DC2626; }
 .metric-num-medium        { color: #D97706; }
 .metric-num-low           { color: #4A7C59; }
-.metric-num-informational { color: #A09080; }
+.metric-num-informational { color: #6B9E78; }
 .metric-label {
     font-size: 0.7rem;
-    color: #8B7355;
+    color: #6B9E78;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.7px;
@@ -258,28 +289,28 @@ section[data-testid="stSidebar"] {
     text-transform: uppercase;
     letter-spacing: 0.8px;
 }
-.section-high          { background: rgba(220,38,38,0.06);  color: #B91C1C; border-left: 3px solid #DC2626; }
-.section-medium        { background: rgba(217,119,6,0.06);  color: #B45309; border-left: 3px solid #D97706; }
+.section-high          { background: rgba(220,38,38,0.05);  color: #B91C1C; border-left: 3px solid #DC2626; }
+.section-medium        { background: rgba(217,119,6,0.05);  color: #B45309; border-left: 3px solid #D97706; }
 .section-low           { background: rgba(74,124,89,0.06);  color: #3D6B4A; border-left: 3px solid #4A7C59; }
-.section-informational { background: rgba(139,115,85,0.06); color: #8B7355; border-left: 3px solid #C8BCA8; }
+.section-informational { background: rgba(74,124,89,0.04);  color: #6B9E78; border-left: 3px solid #A8D4B4; }
 .clause-count { font-weight: 400; opacity: 0.65; font-size: 0.78rem; }
 
 /* ── Clause accordion cards ──────────────────────────────── */
 details.clause-card {
     background: #FFFFFF;
-    border: 1px solid #E8E0D0;
+    border: 1px solid #C8E0D0;
     border-radius: 10px;
     margin-bottom: 8px;
     overflow: hidden;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    box-shadow: 0 1px 4px rgba(74,124,89,0.06);
     transition: border-color 0.15s, box-shadow 0.15s;
 }
-details.clause-card:hover         { border-color: #C8BCA8; box-shadow: 0 3px 16px rgba(0,0,0,0.08); }
-details.clause-card[open]         { border-color: #B8AFA0; box-shadow: 0 4px 20px rgba(0,0,0,0.10); }
-details.clause-high               { border-left: 3px solid #DC2626; }
-details.clause-medium             { border-left: 3px solid #D97706; }
-details.clause-low                { border-left: 3px solid #4A7C59; }
-details.clause-informational      { border-left: 3px solid #C8BCA8; }
+details.clause-card:hover    { border-color: #8BBD9A; box-shadow: 0 3px 16px rgba(74,124,89,0.10); }
+details.clause-card[open]    { border-color: #8BBD9A; box-shadow: 0 4px 20px rgba(74,124,89,0.12); }
+details.clause-high          { border-left: 3px solid #DC2626; }
+details.clause-medium        { border-left: 3px solid #D97706; }
+details.clause-low           { border-left: 3px solid #4A7C59; }
+details.clause-informational { border-left: 3px solid #A8D4B4; }
 
 details.clause-card > summary {
     padding: 13px 16px;
@@ -288,7 +319,7 @@ details.clause-card > summary {
     align-items: center;
     gap: 11px;
     list-style: none;
-    color: #3A3020;
+    color: #2D4A35;
     font-size: 0.86rem;
     user-select: none;
 }
@@ -298,7 +329,7 @@ details.clause-card > summary::after {
     margin-left: auto;
     font-size: 1.3rem;
     line-height: 1;
-    color: #C8BCA8;
+    color: #A8D4B4;
     transition: transform 0.2s;
     flex-shrink: 0;
 }
@@ -306,23 +337,22 @@ details.clause-card[open] > summary::after { transform: rotate(90deg); color: #4
 details.clause-card > summary:hover { color: #1A1A1A; }
 
 .clause-preview { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 1; min-width: 0; }
-
-.clause-body { padding: 2px 16px 16px; border-top: 1px solid #F0E8DC; }
+.clause-body    { padding: 2px 16px 16px; border-top: 1px solid #E4F0E8; }
 
 .clause-meta-label {
     font-size: 0.67rem;
     font-weight: 700;
     letter-spacing: 1px;
     text-transform: uppercase;
-    color: #B0A090;
+    color: #A8D4B4;
     margin: 14px 0 6px;
 }
 .clause-full-text {
-    background: #FAF7F2;
-    border-left: 2px solid #E0D4C0;
+    background: #F2F8F4;
+    border-left: 2px solid #C8E0D0;
     padding: 12px 14px;
     border-radius: 4px;
-    color: #5A5040;
+    color: #3D5C45;
     font-size: 0.82rem;
     line-height: 1.7;
     white-space: pre-wrap;
@@ -331,23 +361,17 @@ details.clause-card > summary:hover { color: #1A1A1A; }
 
 /* ── Keyword badges ──────────────────────────────────────── */
 .keywords-row { margin: 12px 0 4px; display: flex; flex-wrap: wrap; gap: 5px; }
-.kw-badge {
-    display: inline-block;
-    padding: 3px 9px;
-    border-radius: 20px;
-    font-size: 0.7rem;
-    font-weight: 600;
-}
-.kw-high          { background: rgba(220,38,38,0.08);  color: #B91C1C; border: 1px solid rgba(220,38,38,0.18); }
-.kw-medium        { background: rgba(217,119,6,0.08);  color: #B45309; border: 1px solid rgba(217,119,6,0.18); }
-.kw-low           { background: rgba(74,124,89,0.08);  color: #3D6B4A; border: 1px solid rgba(74,124,89,0.18); }
-.kw-informational { background: rgba(139,115,85,0.08); color: #8B7355; border: 1px solid rgba(139,115,85,0.18); }
+.kw-badge     { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
+.kw-high          { background: rgba(220,38,38,0.07);  color: #B91C1C; border: 1px solid rgba(220,38,38,0.15); }
+.kw-medium        { background: rgba(217,119,6,0.07);  color: #B45309; border: 1px solid rgba(217,119,6,0.15); }
+.kw-low           { background: rgba(74,124,89,0.08);  color: #3D6B4A; border: 1px solid rgba(74,124,89,0.15); }
+.kw-informational { background: rgba(74,124,89,0.05);  color: #6B9E78; border: 1px solid rgba(74,124,89,0.12); }
 
 /* ── AI explanation box ──────────────────────────────────── */
 .ai-box {
-    background: #F7F3EC;
-    border: 1px solid #E0D4C0;
-    border-left: 3px solid #8B7355;
+    background: #F2F8F4;
+    border: 1px solid #C8E0D0;
+    border-left: 3px solid #4A7C59;
     border-radius: 8px;
     padding: 14px 16px;
     margin-top: 14px;
@@ -357,17 +381,12 @@ details.clause-card > summary:hover { color: #1A1A1A; }
     font-weight: 700;
     letter-spacing: 1px;
     text-transform: uppercase;
-    color: #8B7355;
+    color: #4A7C59;
     margin-bottom: 8px;
 }
-.ai-box p {
-    margin: 0;
-    color: #3A3020;
-    font-size: 0.875rem;
-    line-height: 1.7;
-}
+.ai-box p { margin: 0; color: #2D4A35; font-size: 0.875rem; line-height: 1.7; }
 
-/* ── Risk level badge (inside summary) ───────────────────── */
+/* ── Risk level badge ────────────────────────────────────── */
 .badge-level {
     display: inline-block;
     padding: 2px 7px;
@@ -378,16 +397,16 @@ details.clause-card > summary:hover { color: #1A1A1A; }
     text-transform: uppercase;
     flex-shrink: 0;
 }
-.badge-high          { background: rgba(220,38,38,0.10);  color: #B91C1C; }
-.badge-medium        { background: rgba(217,119,6,0.10);  color: #B45309; }
-.badge-low           { background: rgba(74,124,89,0.10);  color: #3D6B4A; }
-.badge-informational { background: rgba(139,115,85,0.10); color: #8B7355; }
+.badge-high          { background: rgba(220,38,38,0.09);  color: #B91C1C; }
+.badge-medium        { background: rgba(217,119,6,0.09);  color: #B45309; }
+.badge-low           { background: rgba(74,124,89,0.09);  color: #3D6B4A; }
+.badge-informational { background: rgba(74,124,89,0.06);  color: #6B9E78; }
 
 /* ── Scrollbar ───────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #F5F0E8; }
-::-webkit-scrollbar-thumb { background: #D0C8B8; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #B8AFA0; }
+::-webkit-scrollbar-track { background: #FFFFFF; }
+::-webkit-scrollbar-thumb { background: #C8E0D0; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #8BBD9A; }
 """
 
 st.markdown(f"<style>{_CSS}</style>", unsafe_allow_html=True)
@@ -395,71 +414,54 @@ st.markdown(f"<style>{_CSS}</style>", unsafe_allow_html=True)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _logo_tag(width: int = 48) -> str:
+def _logo_tag(width: int = 56) -> str:
     if os.path.exists("logo.png"):
         with open("logo.png", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-        r = max(4, width // 7)
         return (
-            f'<img src="data:image/png;base64,{b64}" '
-            f'width="{width}" height="{width}" '
-            f'style="border-radius:{r}px;object-fit:contain;display:block;flex-shrink:0;" alt="">'
+            f'<img src="data:image/png;base64,{b64}" width="{width}" '
+            f'style="display:block;object-fit:contain;" alt="FinClariX">'
         )
-    r = max(4, width // 7)
     fs = width // 2
     return (
-        f'<div style="width:{width}px;height:{width}px;'
-        f'background:linear-gradient(135deg,#4A7C59,#8B7355);'
-        f'border-radius:{r}px;display:flex;align-items:center;'
-        f'justify-content:center;font-size:{fs}px;font-weight:900;'
-        f'color:white;font-family:sans-serif;flex-shrink:0;letter-spacing:-1px;">F</div>'
+        f'<div style="font-size:{fs}px;font-weight:900;color:#4A7C59;'
+        f'line-height:1;font-family:sans-serif;">F</div>'
     )
 
 
 def _build_results_html(by_level: dict) -> str:
     counts = {lvl: len(by_level[lvl]) for lvl in RISK_LEVELS}
-
     metric_labels = {
-        "High": "🔴 High Risk",
-        "Medium": "🟡 Medium Risk",
-        "Low": "🟢 Low Risk",
-        "Informational": "ℹ️ Informational",
+        "High": "🔴 High Risk", "Medium": "🟡 Medium Risk",
+        "Low": "🟢 Low Risk",   "Informational": "ℹ️ Informational",
     }
 
-    metrics_html = '<div class="dashboard-heading">Risk Summary</div><div class="metrics-grid">'
+    html = '<div class="dashboard-heading">Risk Summary</div><div class="metrics-grid">'
     for lvl in RISK_LEVELS:
         lc = lvl.lower()
-        metrics_html += (
+        html += (
             f'<div class="metric-card metric-{lc}">'
             f'<div class="metric-number metric-num-{lc}">{counts[lvl]}</div>'
             f'<div class="metric-label">{metric_labels[lvl]}</div>'
             f'</div>'
         )
-    metrics_html += "</div>"
+    html += "</div>"
 
-    sections_html = ""
     for lvl in RISK_LEVELS:
         group = by_level[lvl]
         if not group:
             continue
-
         lc = lvl.lower()
-        emoji = RISK_EMOJI[lvl]
         n = len(group)
-        plural = "s" if n != 1 else ""
-
-        sections_html += (
+        html += (
             f'<div class="risk-section-header section-{lc}">'
-            f'<span>{emoji} {lvl} Risk</span>'
-            f'<span class="clause-count">{n} clause{plural}</span>'
+            f'<span>{RISK_EMOJI[lvl]} {lvl} Risk</span>'
+            f'<span class="clause-count">{n} clause{"s" if n != 1 else ""}</span>'
             f'</div>'
         )
-
         for i, clause in enumerate(group, 1):
             text = clause["text"]
-            preview = text[:100].replace("\n", " ")
-            if len(text) > 100:
-                preview += "…"
+            preview = text[:100].replace("\n", " ") + ("…" if len(text) > 100 else "")
 
             kw_html = ""
             if clause["keywords"]:
@@ -467,22 +469,17 @@ def _build_results_html(by_level: dict) -> str:
                     f'<span class="kw-badge kw-{lc}">{html_lib.escape(k)}</span>'
                     for k in clause["keywords"]
                 )
-                kw_html = (
-                    f'<div class="clause-meta-label">Flagged terms</div>'
-                    f'<div class="keywords-row">{badges}</div>'
-                )
+                kw_html = f'<div class="clause-meta-label">Flagged terms</div><div class="keywords-row">{badges}</div>'
 
             ai_html = ""
             if clause.get("explanation"):
                 expl = html_lib.escape(clause["explanation"]).replace("\n", "<br>")
                 ai_html = (
-                    f'<div class="ai-box">'
-                    f'<div class="ai-label">✦ Plain talk</div>'
-                    f'<p>{expl}</p>'
-                    f'</div>'
+                    f'<div class="ai-box"><div class="ai-label">✦ Plain talk</div>'
+                    f'<p>{expl}</p></div>'
                 )
 
-            sections_html += (
+            html += (
                 f'<details class="clause-card clause-{lc}">'
                 f'<summary>'
                 f'<span class="badge-level badge-{lc}">{lvl.upper()}</span>'
@@ -491,181 +488,193 @@ def _build_results_html(by_level: dict) -> str:
                 f'<div class="clause-body">'
                 f'<div class="clause-meta-label">Full clause text</div>'
                 f'<div class="clause-full-text">{html_lib.escape(text)}</div>'
-                f'{kw_html}'
-                f'{ai_html}'
-                f'</div>'
-                f'</details>'
+                f'{kw_html}{ai_html}'
+                f'</div></details>'
             )
 
-    return metrics_html + sections_html
+    return html
 
 
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown(
-    f"""
-    <div class="brand-header">
-        {_logo_tag(50)}
-        <div>
-            <div class="brand-name">FinClariX</div>
-            <div class="brand-tagline">Finance that sticks, minus the tricks.</div>
-        </div>
-    </div>
-    <div class="divider-line"></div>
-    """,
-    unsafe_allow_html=True,
-)
+# ── Header row ────────────────────────────────────────────────────────────────
+hdr_left, hdr_right = st.columns([14, 1])
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
+with hdr_left:
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;gap:10px;
-                    padding-bottom:16px;border-bottom:1px solid #E8E0D0;margin-bottom:4px;">
-            {_logo_tag(30)}
-            <span style="font-weight:700;font-size:0.92rem;color:#1A1A1A;
-                         letter-spacing:-0.2px;">FinClariX</span>
+        <div style="padding-top:32px;">
+            {_logo_tag(60)}
+            <p class="brand-tagline">Finance that sticks, minus the tricks.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.markdown('<p class="sidebar-section">Settings</p>', unsafe_allow_html=True)
-
-    language = st.selectbox(
-        "Explanation language",
-        ["English", "French", "Spanish", "German", "Dutch", "Mandarin Chinese"],
-        help="Language for AI-generated clause explanations.",
-    )
-
-    use_ai = st.toggle("Enable AI explanations", value=True)
-
-    api_key_input = st.text_input(
-        "Anthropic API key (optional)",
-        type="password",
-        placeholder="sk-ant-… or set ANTHROPIC_API_KEY",
-        help="Overrides the ANTHROPIC_API_KEY environment variable for this session.",
-    )
-    if api_key_input:
-        os.environ["ANTHROPIC_API_KEY"] = api_key_input
-
-    if use_ai and not os.getenv("ANTHROPIC_API_KEY"):
-        st.warning("No API key set — AI explanations will be skipped.")
-
-    st.markdown('<p class="sidebar-section">How it works</p>', unsafe_allow_html=True)
-    st.markdown(
-        """
-        <ol class="how-it-works">
-            <li>Upload a PDF or paste contract text</li>
-            <li>Clauses scanned for risky keywords</li>
-            <li>Claude explains each risky clause</li>
-            <li>Download your full Markdown report</li>
-        </ol>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# ── Input tabs ────────────────────────────────────────────────────────────────
-tab_upload, tab_paste = st.tabs(["📎  Upload PDF", "📝  Paste Text"])
-
-raw_text = ""
-source_name = "contract"
-
-with tab_upload:
-    uploaded = st.file_uploader(
-        "Upload contract PDF",
-        type=["pdf"],
-        label_visibility="collapsed",
-        help="Scanned image PDFs without embedded text cannot be parsed.",
-    )
-    if uploaded:
-        source_name = uploaded.name
-        with st.spinner("Extracting text from PDF…"):
-            try:
-                raw_text = extract_text_from_pdf(uploaded)
-            except Exception as e:
-                st.error(f"Could not read PDF: {e}")
-        if raw_text.strip():
-            st.success(f"Text extracted from **{uploaded.name}**")
-            with st.expander("Preview extracted text"):
-                st.text(raw_text[:3000] + ("…" if len(raw_text) > 3000 else ""))
-        else:
-            st.warning(
-                "No text found — this may be a scanned/image PDF. "
-                "Try copying the text and using the Paste Text tab instead."
-            )
-
-with tab_paste:
-    pasted = st.text_area(
-        "Contract text",
-        height=260,
-        placeholder="Paste the full text of your contract here…",
-        label_visibility="collapsed",
-    )
-    if pasted.strip():
-        raw_text = pasted.strip()
-        source_name = "pasted_contract"
-
-# ── Analyse ───────────────────────────────────────────────────────────────────
-if raw_text.strip():
-    if st.button("🔍  Analyse Contract", type="primary", use_container_width=True):
-        keywords_db = load_keywords()
-        clauses = split_into_clauses(raw_text)
-
-        if not clauses:
-            st.error(
-                "Could not detect any clauses. "
-                "Try separating sections with blank lines."
-            )
-            st.stop()
-
-        results: list[dict] = []
-        ai_enabled = use_ai and bool(os.getenv("ANTHROPIC_API_KEY"))
-        progress = st.progress(0, text="Scanning clauses…")
-
-        for i, clause_text in enumerate(clauses):
-            matches = detect_risks(clause_text, keywords_db)
-            risk = score_clause(matches)
-            kws = all_keywords(matches)
-
-            explanation = ""
-            if ai_enabled and risk != "Informational":
-                try:
-                    explanation = explain_clause(clause_text, risk, kws, language)
-                except Exception as e:
-                    explanation = f"Could not generate explanation: {e}"
-
-            results.append(
-                {"text": clause_text, "risk": risk, "keywords": kws, "explanation": explanation}
-            )
-            progress.progress(
-                (i + 1) / len(clauses),
-                text=f"Scanning clause {i + 1} / {len(clauses)}…",
-            )
-
-        progress.empty()
-        st.session_state["results"] = results
-        st.session_state["source_name"] = source_name
+with hdr_right:
+    st.markdown('<div class="menu-btn" style="padding-top:36px;text-align:right;">', unsafe_allow_html=True)
+    if st.button("☰", key="toggle_settings"):
+        st.session_state.settings_open = not st.session_state.settings_open
         st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ── Results dashboard ─────────────────────────────────────────────────────────
-if "results" in st.session_state:
-    results: list[dict] = st.session_state["results"]
-    source_name = st.session_state.get("source_name", "contract")
+st.markdown('<div class="divider-line"></div>', unsafe_allow_html=True)
 
-    by_level: dict[str, list[dict]] = {lvl: [] for lvl in RISK_LEVELS}
-    for r in results:
-        by_level[r["risk"]].append(r)
+# ── Layout: main content + optional right settings panel ─────────────────────
+if st.session_state.settings_open:
+    main_col, panel_col = st.columns([3, 1], gap="large")
+else:
+    main_col = st.container()
+    panel_col = None
 
-    st.markdown('<div class="divider-line"></div>', unsafe_allow_html=True)
-    st.markdown(_build_results_html(by_level), unsafe_allow_html=True)
-    st.markdown('<div class="divider-line" style="margin-top:32px;"></div>', unsafe_allow_html=True)
+# ── Settings panel (rendered first so API key is set before analysis) ─────────
+if panel_col:
+    with panel_col:
+        st.markdown('<div class="settings-panel">', unsafe_allow_html=True)
+        st.markdown('<div class="panel-title">⚙ Settings</div>', unsafe_allow_html=True)
 
-    report_md = generate_report(results, source_name)
-    safe_name = source_name.replace(".pdf", "").replace(" ", "_")
-    st.download_button(
-        label="⬇️  Download Markdown Report",
-        data=report_md,
-        file_name=f"finclarix_report_{safe_name}.md",
-        mime="text/markdown",
-        use_container_width=True,
-    )
+        new_lang = st.selectbox(
+            "Language",
+            _LANGUAGES,
+            index=_LANGUAGES.index(st.session_state.language),
+        )
+        st.session_state.language = new_lang
+        _lang = new_lang
+
+        new_use_ai = st.toggle("Enable AI explanations", value=st.session_state.use_ai)
+        st.session_state.use_ai = new_use_ai
+        _use_ai = new_use_ai
+
+        new_key = st.text_input(
+            "Anthropic API key",
+            type="password",
+            placeholder="sk-ant-… or set env var",
+            help="Stored for this session only.",
+        )
+        if new_key:
+            st.session_state.api_key = new_key
+            os.environ["ANTHROPIC_API_KEY"] = new_key
+
+        if _use_ai and not os.getenv("ANTHROPIC_API_KEY"):
+            st.warning("No API key — AI explanations disabled.")
+
+        st.markdown('<div class="panel-section">How it works</div>', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <ol class="how-it-works">
+                <li>Upload a PDF or paste text</li>
+                <li>Clauses scanned for keywords</li>
+                <li>Claude explains each clause</li>
+                <li>Download your report</li>
+            </ol>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ── Main content ──────────────────────────────────────────────────────────────
+with main_col:
+    # Input section centred at ~50% width
+    raw_text = ""
+    source_name = "contract"
+
+    _, center_col, _ = st.columns([1, 2, 1])
+
+    with center_col:
+        tab_upload, tab_paste = st.tabs(["📎  Upload PDF", "📝  Paste Text"])
+
+        with tab_upload:
+            uploaded = st.file_uploader(
+                "Upload contract PDF",
+                type=["pdf"],
+                label_visibility="collapsed",
+                help="Scanned image PDFs without embedded text cannot be parsed.",
+            )
+            if uploaded:
+                source_name = uploaded.name
+                with st.spinner("Extracting text from PDF…"):
+                    try:
+                        raw_text = extract_text_from_pdf(uploaded)
+                    except Exception as e:
+                        st.error(f"Could not read PDF: {e}")
+                if raw_text.strip():
+                    st.success(f"Extracted **{uploaded.name}**")
+                    with st.expander("Preview extracted text"):
+                        st.text(raw_text[:3000] + ("…" if len(raw_text) > 3000 else ""))
+                else:
+                    st.warning("No text found — try the Paste Text tab instead.")
+
+        with tab_paste:
+            pasted = st.text_area(
+                "Contract text",
+                height=240,
+                placeholder="Paste the full text of your contract here…",
+                label_visibility="collapsed",
+            )
+            if pasted.strip():
+                raw_text = pasted.strip()
+                source_name = "pasted_contract"
+
+    # Analyse button — same centred width
+    if raw_text.strip():
+        _, btn_col, _ = st.columns([1, 2, 1])
+        with btn_col:
+            if st.button("🔍  Analyse Contract", type="primary", use_container_width=True):
+                keywords_db = load_keywords()
+                clauses = split_into_clauses(raw_text)
+
+                if not clauses:
+                    st.error("Could not detect clauses — try separating sections with blank lines.")
+                    st.stop()
+
+                results: list[dict] = []
+                ai_enabled = _use_ai and bool(os.getenv("ANTHROPIC_API_KEY"))
+                progress = st.progress(0, text="Scanning clauses…")
+
+                for i, clause_text in enumerate(clauses):
+                    matches = detect_risks(clause_text, keywords_db)
+                    risk = score_clause(matches)
+                    kws = all_keywords(matches)
+
+                    explanation = ""
+                    if ai_enabled and risk != "Informational":
+                        try:
+                            explanation = explain_clause(clause_text, risk, kws, _lang)
+                        except Exception as e:
+                            explanation = f"Could not generate explanation: {e}"
+
+                    results.append(
+                        {"text": clause_text, "risk": risk, "keywords": kws, "explanation": explanation}
+                    )
+                    progress.progress(
+                        (i + 1) / len(clauses),
+                        text=f"Scanning clause {i + 1} / {len(clauses)}…",
+                    )
+
+                progress.empty()
+                st.session_state["results"] = results
+                st.session_state["source_name"] = source_name
+                st.rerun()
+
+    # Results — full width of main_col
+    if "results" in st.session_state:
+        results: list[dict] = st.session_state["results"]
+        source_name = st.session_state.get("source_name", "contract")
+
+        by_level: dict[str, list[dict]] = {lvl: [] for lvl in RISK_LEVELS}
+        for r in results:
+            by_level[r["risk"]].append(r)
+
+        st.markdown('<div class="divider-line"></div>', unsafe_allow_html=True)
+        st.markdown(_build_results_html(by_level), unsafe_allow_html=True)
+        st.markdown('<div class="divider-line" style="margin-top:32px;"></div>', unsafe_allow_html=True)
+
+        report_md = generate_report(results, source_name)
+        safe_name = source_name.replace(".pdf", "").replace(" ", "_")
+        _, dl_col, _ = st.columns([1, 2, 1])
+        with dl_col:
+            st.download_button(
+                label="⬇️  Download Markdown Report",
+                data=report_md,
+                file_name=f"finclarix_report_{safe_name}.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
