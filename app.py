@@ -60,8 +60,9 @@ _CSS = """
     font-size: 0.82rem;
     color: #4A7C59;
     font-style: italic;
-    margin: 6px 0 0;
+    margin: 8px 0 0;
     letter-spacing: 0.05px;
+    text-align: center;
 }
 .divider-line {
     height: 1px;
@@ -420,12 +421,12 @@ def _logo_tag(width: int = 56) -> str:
             b64 = base64.b64encode(f.read()).decode()
         return (
             f'<img src="data:image/png;base64,{b64}" width="{width}" '
-            f'style="display:block;object-fit:contain;" alt="FinClariX">'
+            f'style="display:block;object-fit:contain;margin:0 auto;" alt="FinClariX">'
         )
     fs = width // 2
     return (
         f'<div style="font-size:{fs}px;font-weight:900;color:#4A7C59;'
-        f'line-height:1;font-family:sans-serif;">F</div>'
+        f'line-height:1;font-family:sans-serif;text-align:center;">F</div>'
     )
 
 
@@ -496,25 +497,25 @@ def _build_results_html(by_level: dict) -> str:
 
 
 # ── Header row ────────────────────────────────────────────────────────────────
-hdr_left, hdr_right = st.columns([14, 1])
+hdr_left, hdr_center, hdr_right = st.columns([1, 8, 1])
 
 with hdr_left:
+    st.markdown('<div class="menu-btn" style="padding-top:44px;">', unsafe_allow_html=True)
+    if st.button("☰", key="toggle_settings"):
+        st.session_state.settings_open = not st.session_state.settings_open
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with hdr_center:
     st.markdown(
         f"""
-        <div style="padding-top:32px;">
-            {_logo_tag(60)}
+        <div style="padding-top:40px;text-align:center;">
+            {_logo_tag(300)}
             <p class="brand-tagline">Finance that sticks, minus the tricks.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-with hdr_right:
-    st.markdown('<div class="menu-btn" style="padding-top:36px;text-align:right;">', unsafe_allow_html=True)
-    if st.button("☰", key="toggle_settings"):
-        st.session_state.settings_open = not st.session_state.settings_open
-        st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown('<div class="divider-line"></div>', unsafe_allow_html=True)
 
