@@ -1,17 +1,34 @@
 import base64
 import html as html_lib
 import os
+from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 
+from src.clause_breakdown import build_breakdown, merge_breakdown
 from src.explanation_generator import explain_clause
-from src.pdf_reader import extract_text_from_pdf, split_into_clauses
-from src.report_generator import generate_report
+from src.financial_extractor import build_exposure_summary, find_rent_amount
+from src.free_translate import translate_text
+from src.i18n import t
+from src.pdf_reader import OCR_AVAILABLE, extract_text_from_pdf, split_into_clauses
+from src.report_generator import generate_report_pdf
 from src.risk_detector import detect_risks, load_keywords
 from src.risk_scoring import RISK_EMOJI, RISK_LEVELS, all_keywords, score_clause
 
-load_dotenv()
+# ── Project paths (always resolved relative to this file, never hardcoded) ───
+# This makes the app launch-location-independent: `streamlit run app.py` works
+# the same whether you run it from the project root, a parent directory, or
+# on a different machine/OS entirely.
+BASE_DIR = Path(__file__).resolve().parent
+LOGO_PATH = BASE_DIR / "logo.png"
+KEYWORDS_PATH = BASE_DIR / "data" / "risk_keywords.json"
+SAMPLE_CONTRACTS_DIR = BASE_DIR / "sample_contracts"
+
+# Reads ANTHROPIC_API_KEY (and any other settings) from a local .env file if
+# present. Missing the file — or the key — is not an error: explain_clause()
+# already degrades to the deterministic rule-based breakdown without it.
+load_dotenv(BASE_DIR / ".env")
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -23,7 +40,7 @@ st.set_page_config(
 
 # ── Session state defaults ────────────────────────────────────────────────────
 _LANGUAGES = [
-    "English", "Spanish", "Dutch", "French", "German", "Italian",
+    "English", "Spanish", "Chinese", "Dutch", "French", "German", "Italian",
     "Portuguese", "Polish", "Romanian", "Swedish", "Czech", "Hungarian", "Greek",
 ]
 
@@ -389,6 +406,40 @@ details.clause-card > summary:hover { color: #1A1A1A; }
     margin-bottom: 8px;
 }
 .ai-box p { margin: 0; color: #2D4A35; font-size: 0.875rem; line-height: 1.7; }
+.ai-note  { margin-top: 10px; color: #8BAE96; font-size: 0.72rem; font-style: italic; }
+
+/* ── Four-part clause breakdown ───────────────────────────── */
+.breakdown-part + .breakdown-part { margin-top: 12px; }
+.breakdown-part-label {
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #6B9E78;
+    margin-bottom: 3px;
+}
+
+/* ── Financial exposure summary ───────────────────────────── */
+.exposure-box {
+    background: #FBF7EE;
+    border: 1px solid #EAD9B8;
+    border-left: 3px solid #C8973F;
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 18px 0 28px;
+}
+.exposure-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #9C7322;
+    margin-bottom: 4px;
+}
+.exposure-subtitle { font-size: 0.78rem; color: #8A6A36; margin-bottom: 12px; }
+.exposure-list { margin: 0; padding-left: 20px; }
+.exposure-list li { color: #5C4421; font-size: 0.86rem; line-height: 1.9; }
+.exposure-list li b { color: #9C7322; }
 
 /* ── Risk level badge ────────────────────────────────────── */
 .badge-level {
@@ -419,9 +470,9 @@ st.markdown(f"<style>{_CSS}</style>", unsafe_allow_html=True)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _logo_tag(width: int = 56) -> str:
-    if os.path.exists("logo.png"):
-        mtime = int(os.path.getmtime("logo.png"))
-        with open("logo.png", "rb") as f:
+    if LOGO_PATH.exists():
+        mtime = int(LOGO_PATH.stat().st_mtime)
+        with open(LOGO_PATH, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
         return (
             f'<img src="data:image/png;base64,{b64}" width="{width}" '
@@ -435,23 +486,82 @@ def _logo_tag(width: int = 56) -> str:
     )
 
 
-def _build_results_html(by_level: dict) -> str:
-    counts = {lvl: len(by_level[lvl]) for lvl in RISK_LEVELS}
-    metric_labels = {
-        "High": "🔴 High Risk", "Medium": "🟡 Medium Risk",
-        "Low": "🟢 Low Risk",   "Informational": "ℹ️ Informational",
-    }
+# Translation-key mapping for the four breakdown parts — labels are looked up
+# via t() at render time so they follow the active language selection.
+_BREAKDOWN_LABEL_KEYS = (
+    ("explanation", "label_explanation"),
+    ("why_it_matters", "label_why"),
+    ("financial_impact", "label_financial_impact"),
+    ("suggested_action", "label_suggested_action"),
+)
 
-    html = '<div class="dashboard-heading">Risk Summary</div><div class="metrics-grid">'
+# Risk-level → translation-key mapping for metric cards, section headers, and
+# clause badges, so every label follows the active language (see src/i18n.py).
+_METRIC_KEYS = {"High": "metric_high", "Medium": "metric_medium", "Low": "metric_low", "Informational": "metric_informational"}
+_SECTION_KEYS = {"High": "metric_high", "Medium": "metric_medium", "Low": "metric_low", "Informational": "section_informational"}
+_BADGE_KEYS = {"High": "badge_high", "Medium": "badge_medium", "Low": "badge_low", "Informational": "badge_informational"}
+
+
+def _build_exposure_summary_html(items: list[dict], lang: str = "English") -> str:
+    if not items:
+        return ""
+
+    # Financial Exposure Summary lines (e.g. "€4,050 early termination penalty
+    # based on three months of €1,350 rent") are composed English sentences,
+    # just like the clause breakdowns — translate them with the same 0-cost
+    # free layer, FRESH on every render, so a language switch updates them
+    # immediately (see the matching comment in _build_results_html for why
+    # this happens at render time rather than being baked in at analysis
+    # time). Cached by (text, lang), so repeat renders stay fast.
+    translation_failed = False
+    row_items = []
+    for item in items:
+        text = item.get("text", "")
+        if lang != "English":
+            translated_text, ok = translate_text(text, lang)
+            if not ok:
+                translation_failed = True
+            text = translated_text
+        row_items.append(text)
+    rows = "".join(f"<li>{html_lib.escape(text)}</li>" for text in row_items)
+
+    note_html = ""
+    if translation_failed:
+        note_html = f'<div class="ai-note">{html_lib.escape(t("translation_unavailable_notice", lang))}</div>'
+
+    return (
+        '<div class="exposure-box">'
+        f'<div class="exposure-title">💰 {t("exposure_title", lang)}</div>'
+        f'<div class="exposure-subtitle">{t("exposure_subtitle", lang)}</div>'
+        f'<ul class="exposure-list">{rows}</ul>'
+        f'{note_html}'
+        '</div>'
+    )
+
+
+def _build_results_html(by_level: dict, exposure_items: list[dict] | None = None, lang: str = "English") -> str:
+    counts = {lvl: len(by_level[lvl]) for lvl in RISK_LEVELS}
+    risk_emoji_prefix = {"High": "🔴", "Medium": "🟡", "Low": "🟢", "Informational": "ℹ️"}
+
+    html = f'<div class="dashboard-heading">{t("risk_summary", lang)}</div><div class="metrics-grid">'
     for lvl in RISK_LEVELS:
         lc = lvl.lower()
         html += (
             f'<div class="metric-card metric-{lc}">'
             f'<div class="metric-number metric-num-{lc}">{counts[lvl]}</div>'
-            f'<div class="metric-label">{metric_labels[lvl]}</div>'
+            f'<div class="metric-label">{risk_emoji_prefix[lvl]} {t(_METRIC_KEYS[lvl], lang)}</div>'
             f'</div>'
         )
     html += "</div>"
+
+    # The Financial Exposure Summary is FinClariX's flagship "quantified
+    # impact" feature (per the business plan), so it's surfaced immediately
+    # after the headline Risk Summary metrics — before the user has to scroll
+    # through every individual clause group to find it.
+    html += _build_exposure_summary_html(exposure_items or [], lang)
+
+    clause_word = t("clause_singular", lang)
+    clauses_word = t("clause_plural", lang)
 
     for lvl in RISK_LEVELS:
         group = by_level[lvl]
@@ -461,8 +571,8 @@ def _build_results_html(by_level: dict) -> str:
         n = len(group)
         html += (
             f'<div class="risk-section-header section-{lc}">'
-            f'<span>{RISK_EMOJI[lvl]} {lvl} Risk</span>'
-            f'<span class="clause-count">{n} clause{"s" if n != 1 else ""}</span>'
+            f'<span>{RISK_EMOJI[lvl]} {t(_SECTION_KEYS[lvl], lang)}</span>'
+            f'<span class="clause-count">{n} {clause_word if n == 1 else clauses_word}</span>'
             f'</div>'
         )
         for i, clause in enumerate(group, 1):
@@ -475,24 +585,105 @@ def _build_results_html(by_level: dict) -> str:
                     f'<span class="kw-badge kw-{lc}">{html_lib.escape(k)}</span>'
                     for k in clause["keywords"]
                 )
-                kw_html = f'<div class="clause-meta-label">Flagged terms</div><div class="keywords-row">{badges}</div>'
+                kw_html = (
+                    f'<div class="clause-meta-label">{t("flagged_terms", lang)}</div>'
+                    f'<div class="keywords-row">{badges}</div>'
+                )
 
             ai_html = ""
-            if clause.get("explanation"):
-                expl = html_lib.escape(clause["explanation"]).replace("\n", "<br>")
+            breakdown = clause.get("breakdown")
+            if breakdown:
+                # ── Resolve what to actually display, FRESH on every render ──
+                # This runs every time Streamlit reruns the script — including
+                # immediately after the user flips the language selector — so
+                # switching languages always shows up-to-date wording without
+                # needing to re-click "Analyse Contract". (Baking translated
+                # text into `results` at analysis time would freeze it at
+                # whatever language was selected back then — exactly the bug
+                # this structure avoids.)
+                display_breakdown = dict(breakdown)
+                note_parts: list[str] = []
+
+                if clause.get("localized_by_ai") and clause.get("ai_breakdown"):
+                    # The (paid) Claude path already produced wording in the
+                    # selected language for this clause — use it as-is, no
+                    # machine translation needed (and no notice to show).
+                    display_breakdown = merge_breakdown(display_breakdown, clause["ai_breakdown"])
+                else:
+                    note_key = clause.get("ai_note_key")
+                    if note_key == "ai_disabled_notice":
+                        # Intentionally silent — per user request, the
+                        # "AI explanations are disabled (no API key set) …"
+                        # notice is hidden entirely. The rule-based / machine-
+                        # translated breakdown is still shown below as normal,
+                        # just without the explanatory note about why it's
+                        # not AI-generated.
+                        pass
+                    elif note_key == "ai_unavailable":
+                        note_parts.append(
+                            "AI wording unavailable for this clause — showing the rule-based breakdown."
+                        )
+                    elif note_key == "ai_error":
+                        note_parts.append(
+                            f"AI wording unavailable ({clause.get('ai_note_extra', '')}) — "
+                            f"showing the rule-based breakdown."
+                        )
+
+                    # ── 0-cost dynamic mother-tongue translation ─────────────
+                    # Whenever the selected display language isn't English and
+                    # the breakdown above is still the deterministic ENGLISH
+                    # baseline, machine-translate each of the four parts at
+                    # render time via a FREE backend (see src/free_translate.py
+                    # — defaults to the unofficial Google Translate endpoint;
+                    # no API key needed; switchable to DeepL Free via the
+                    # FINCLARIX_TRANSLATE_PROVIDER env var, no code changes).
+                    # Results are cached by (text, lang), so repeated reruns —
+                    # including every later language switch — stay fast.
+                    #
+                    # Any failure (rate limit, network error, …) keeps the
+                    # English text and surfaces a small fallback notice,
+                    # exactly mirroring the AI-unavailable notices above.
+                    if lang != "English":
+                        translated_parts = {}
+                        translation_failed = False
+                        for key, _label_key in _BREAKDOWN_LABEL_KEYS:
+                            original = display_breakdown.get(key, "")
+                            if original:
+                                translated_text, ok = translate_text(original, lang)
+                                translated_parts[key] = translated_text
+                                if not ok:
+                                    translation_failed = True
+                        display_breakdown = {**display_breakdown, **translated_parts}
+                        if translation_failed:
+                            note_parts.append(t("translation_unavailable_notice", lang))
+
+                parts_html = ""
+                for key, label_key in _BREAKDOWN_LABEL_KEYS:
+                    value = display_breakdown.get(key)
+                    if not value:
+                        continue
+                    safe = html_lib.escape(value).replace("\n", "<br>")
+                    parts_html += (
+                        f'<div class="breakdown-part">'
+                        f'<div class="breakdown-part-label">{t(label_key, lang)}</div>'
+                        f'<p>{safe}</p></div>'
+                    )
+                note_html = ""
+                if note_parts:
+                    note_html = f'<div class="ai-note">{html_lib.escape(" ".join(note_parts))}</div>'
                 ai_html = (
-                    f'<div class="ai-box"><div class="ai-label">✦ Plain talk</div>'
-                    f'<p>{expl}</p></div>'
+                    f'<div class="ai-box"><div class="ai-label">✦ {t("plain_talk", lang)}</div>'
+                    f'{parts_html}{note_html}</div>'
                 )
 
             html += (
                 f'<details class="clause-card clause-{lc}">'
                 f'<summary>'
-                f'<span class="badge-level badge-{lc}">{lvl.upper()}</span>'
+                f'<span class="badge-level badge-{lc}">{t(_BADGE_KEYS[lvl], lang)}</span>'
                 f'<span class="clause-preview">{html_lib.escape(preview)}</span>'
                 f'</summary>'
                 f'<div class="clause-body">'
-                f'<div class="clause-meta-label">Full clause text</div>'
+                f'<div class="clause-meta-label">{t("full_clause_text", lang)}</div>'
                 f'<div class="clause-full-text">{html_lib.escape(text)}</div>'
                 f'{kw_html}{ai_html}'
                 f'</div></details>'
@@ -535,45 +726,36 @@ else:
 if panel_col:
     with panel_col:
         st.markdown('<div class="settings-panel">', unsafe_allow_html=True)
-        st.markdown('<div class="panel-title">⚙ Settings</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="panel-title">⚙ {t("settings_title", _lang)}</div>', unsafe_allow_html=True)
 
+        # NOTE: the selectbox label/options below are translated using the
+        # CURRENT `_lang` (== st.session_state.language, read before this
+        # panel runs) — i.e. the panel chrome reflects whatever language was
+        # active when the page loaded. As soon as the user picks a new
+        # language and the app reruns, every label (including this one)
+        # re-renders in the newly selected language.
         new_lang = st.selectbox(
-            "Language",
+            t("language_label", _lang),
             _LANGUAGES,
             index=_LANGUAGES.index(st.session_state.language),
         )
         st.session_state.language = new_lang
         _lang = new_lang
 
-        new_use_ai = st.toggle("Enable AI explanations", value=st.session_state.use_ai)
+        new_use_ai = st.toggle(t("enable_ai_label", _lang), value=st.session_state.use_ai)
         st.session_state.use_ai = new_use_ai
         _use_ai = new_use_ai
 
-        new_key = st.text_input(
-            "Anthropic API key",
-            type="password",
-            placeholder="sk-ant-… or set env var",
-            help="Stored for this session only.",
-        )
-        if new_key:
-            st.session_state.api_key = new_key
-            os.environ["ANTHROPIC_API_KEY"] = new_key
+        # NOTE: the "Anthropic API key" text input, the "No API key — AI
+        # explanations disabled" notice, and the "How it works" steps list
+        # are intentionally NOT rendered in the sidebar (per user request —
+        # keeps the panel focused on language/AI-toggle controls only).
+        # The app still reads the key from `st.session_state.api_key` /
+        # the `ANTHROPIC_API_KEY` environment variable (e.g. via `.env`),
+        # so AI explanations keep working exactly as before for anyone who
+        # sets the key that way — only the on-screen input/notice/steps
+        # are hidden.
 
-        if _use_ai and not os.getenv("ANTHROPIC_API_KEY"):
-            st.warning("No API key — AI explanations disabled.")
-
-        st.markdown('<div class="panel-section">How it works</div>', unsafe_allow_html=True)
-        st.markdown(
-            """
-            <ol class="how-it-works">
-                <li>Upload a PDF or paste text</li>
-                <li>Clauses scanned for keywords</li>
-                <li>Claude explains each clause</li>
-                <li>Download your report</li>
-            </ol>
-            """,
-            unsafe_allow_html=True,
-        )
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ── Main content ──────────────────────────────────────────────────────────────
@@ -585,14 +767,22 @@ with main_col:
     _, center_col, _ = st.columns([1, 2, 1])
 
     with center_col:
-        tab_upload, tab_paste = st.tabs(["📎  Upload PDF", "📝  Paste Text"])
+        tab_upload, tab_paste = st.tabs([
+            f"📎  {t('tab_upload', _lang)}",
+            f"📝  {t('tab_paste', _lang)}",
+        ])
 
         with tab_upload:
             uploaded = st.file_uploader(
                 "Upload contract PDF",
                 type=["pdf"],
                 label_visibility="collapsed",
-                help="Scanned image PDFs without embedded text cannot be parsed.",
+                help=(
+                    "Scanned/image-only PDFs are OCR'd automatically as a fallback."
+                    if OCR_AVAILABLE else
+                    "Scanned image PDFs without embedded text cannot be parsed "
+                    "(install pytesseract + Tesseract to enable OCR)."
+                ),
             )
             if uploaded:
                 source_name = uploaded.name
@@ -623,8 +813,8 @@ with main_col:
     if raw_text.strip():
         _, btn_col, _ = st.columns([1, 2, 1])
         with btn_col:
-            if st.button("🔍  Analyse Contract", type="primary", use_container_width=True):
-                keywords_db = load_keywords()
+            if st.button(f"🔍  {t('analyse_button', _lang)}", type="primary", use_container_width=True):
+                keywords_db = load_keywords(KEYWORDS_PATH)
                 clauses = split_into_clauses(raw_text)
 
                 if not clauses:
@@ -635,20 +825,72 @@ with main_col:
                 ai_enabled = _use_ai and bool(os.getenv("ANTHROPIC_API_KEY"))
                 progress = st.progress(0, text="Scanning clauses…")
 
+                # Deterministic, rule-based pass: locate the recurring monthly
+                # rent figure once so per-clause exposures (termination,
+                # renewal, …) can be derived from it.
+                rent = find_rent_amount(clauses)
+
                 for i, clause_text in enumerate(clauses):
                     matches = detect_risks(clause_text, keywords_db)
                     risk = score_clause(matches)
                     kws = all_keywords(matches)
 
-                    explanation = ""
-                    if ai_enabled and risk != "Informational":
-                        try:
-                            explanation = explain_clause(clause_text, risk, kws, _lang)
-                        except Exception as e:
-                            explanation = f"Could not generate explanation: {e}"
+                    # Deterministic four-part breakdown — always computed, so
+                    # the app works fully without an API key. This is the
+                    # LANGUAGE-INDEPENDENT baseline: we deliberately store it
+                    # (plus a few status flags below) rather than any
+                    # already-rendered, language-specific text. Baking
+                    # translated strings or notices into `results` here would
+                    # freeze them at whatever language was selected at
+                    # analysis time — switching the language afterwards would
+                    # then have no effect until the user re-clicked "Analyse
+                    # Contract". Instead, the actual translation/notice text
+                    # is resolved fresh on every render in _build_results_html
+                    # (see the comments there), based on whatever `_lang` is
+                    # *right now* — so flipping the language selector updates
+                    # every explanation immediately, exactly as required.
+                    breakdown = build_breakdown(clause_text, risk, kws, rent)
+                    ai_breakdown_overlay = None
+                    ai_note_key = None      # i18n key for a translatable notice
+                    ai_note_extra = ""      # extra (English) detail, e.g. an exception message
+                    localized_by_ai = False
+
+                    if risk != "Informational":
+                        if ai_enabled:
+                            try:
+                                ai_breakdown = explain_clause(clause_text, risk, kws, _lang)
+                                if ai_breakdown is not None:
+                                    # The (paid) Claude path already produced
+                                    # wording in the selected language — store
+                                    # it as an overlay so render-time merging
+                                    # (and skipping machine translation) still
+                                    # works correctly even after a later
+                                    # language switch re-renders this clause.
+                                    ai_breakdown_overlay = ai_breakdown
+                                    localized_by_ai = True
+                                else:
+                                    ai_note_key = "ai_unavailable"
+                            except Exception as e:
+                                ai_note_key = "ai_error"
+                                ai_note_extra = str(e)
+                        elif not os.getenv("ANTHROPIC_API_KEY"):
+                            # No API key configured at all — make that explicit
+                            # on every risky clause. The actual (translated)
+                            # notice text is resolved at render time via
+                            # t("ai_disabled_notice", <current lang>).
+                            ai_note_key = "ai_disabled_notice"
 
                     results.append(
-                        {"text": clause_text, "risk": risk, "keywords": kws, "explanation": explanation}
+                        {
+                            "text": clause_text,
+                            "risk": risk,
+                            "keywords": kws,
+                            "breakdown": breakdown,
+                            "ai_breakdown": ai_breakdown_overlay,
+                            "localized_by_ai": localized_by_ai,
+                            "ai_note_key": ai_note_key,
+                            "ai_note_extra": ai_note_extra,
+                        }
                     )
                     progress.progress(
                         (i + 1) / len(clauses),
@@ -658,6 +900,10 @@ with main_col:
                 progress.empty()
                 st.session_state["results"] = results
                 st.session_state["source_name"] = source_name
+                # Stored as plain English — see _build_exposure_summary_html,
+                # which translates these lines fresh on every render for the
+                # same "language switch updates everything immediately" reason.
+                st.session_state["exposure_items"] = build_exposure_summary(clauses)
                 st.rerun()
 
     # Results — full width of main_col
@@ -669,18 +915,39 @@ with main_col:
         for r in results:
             by_level[r["risk"]].append(r)
 
+        exposure_items = st.session_state.get("exposure_items", [])
+
         st.markdown('<div class="divider-line"></div>', unsafe_allow_html=True)
-        st.markdown(_build_results_html(by_level), unsafe_allow_html=True)
+        st.markdown(_build_results_html(by_level, exposure_items, _lang), unsafe_allow_html=True)
         st.markdown('<div class="divider-line" style="margin-top:32px;"></div>', unsafe_allow_html=True)
 
-        report_md = generate_report(results, source_name)
+        # The downloadable report stays in English (deterministic baseline,
+        # plus any AI-polished overlay) — it's a reference document, and
+        # re-translating the full text of every clause on every render just
+        # to build a string that's discarded unless downloaded would be
+        # wasted work. (In-app display, where translation actually matters
+        # for reading comprehension, is handled live in _build_results_html.)
+        # Re-merge each clause's AI overlay here, since `results[i]["breakdown"]`
+        # now intentionally stores only the untouched deterministic baseline
+        # (see the analysis loop for why) — the merge used to happen there.
+        report_results = [
+            {**r, "breakdown": merge_breakdown(dict(r["breakdown"]), r.get("ai_breakdown"))}
+            for r in results
+        ]
+        # Per the project's business plan, the downloadable report is a PDF
+        # (not Markdown) — `generate_report_pdf()` mirrors the same English
+        # report structure (summary, exposure summary, clauses by risk level)
+        # but renders it as a polished, ready-to-print PDF via fpdf2 (a free,
+        # pure-Python PDF library — see src/report_generator.py for details
+        # on why it stays English and how non-Latin-1 text degrades safely).
+        report_pdf = generate_report_pdf(report_results, source_name, exposure_items)
         safe_name = source_name.replace(".pdf", "").replace(" ", "_")
         _, dl_col, _ = st.columns([1, 2, 1])
         with dl_col:
             st.download_button(
-                label="⬇️  Download Markdown Report",
-                data=report_md,
-                file_name=f"finclarix_report_{safe_name}.md",
-                mime="text/markdown",
+                label=f"⬇️  {t('download_report', _lang)}",
+                data=report_pdf,
+                file_name=f"finclarix_report_{safe_name}.pdf",
+                mime="application/pdf",
                 use_container_width=True,
             )

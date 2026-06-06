@@ -2,7 +2,13 @@ import json
 from pathlib import Path
 
 
-def load_keywords(path: str = "data/risk_keywords.json") -> dict:
+def load_keywords(path: str | Path = "data/risk_keywords.json") -> dict:
+    """Load the risk-keyword lists from a JSON file.
+
+    `path` is relative to the current working directory by default — callers
+    that need launch-location independence (like app.py) should pass an
+    absolute Path resolved from `Path(__file__)`.
+    """
     with open(Path(path)) as f:
         return json.load(f)
 

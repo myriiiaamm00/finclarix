@@ -1,4 +1,32 @@
+# Core — required to run `streamlit run app.py`
 streamlit>=1.35.0
 pdfplumber>=0.11.0
 anthropic>=0.28.0
 python-dotenv>=1.0.0
+
+# PDF report export (src/report_generator.py: generate_report_pdf). fpdf2 is
+# free and open-source (MIT/LGPL), pure-Python, and needs no system libraries
+# (unlike e.g. WeasyPrint, which requires Cairo/Pango) — so installing it adds
+# zero cost and zero extra setup steps. Per the project's business plan, the
+# downloadable report is a polished PDF rather than a raw Markdown file.
+fpdf2>=2.7.0
+
+# Optional — OCR fallback for scanned/image-only PDFs (no embedded text layer).
+# The app runs perfectly well without these; if pytesseract isn't importable,
+# src/pdf_reader.py simply skips OCR and behaves exactly as before.
+# Also requires the Tesseract OCR engine on your system:
+#   macOS:   brew install tesseract
+#   Ubuntu:  sudo apt-get install tesseract-ocr
+# pytesseract>=0.3.10
+
+# 0-cost dynamic translation (src/free_translate.py) — NO new dependency.
+# It talks to free translation backends using only the Python standard
+# library (urllib + json), so nothing needs to be installed here.
+#   * Default backend: the free, unofficial Google Translate web endpoint
+#     — no signup, no API key.
+#   * Optional backend: DeepL's official Free API tier — genuinely free, but
+#     requires a free key from https://www.deepl.com/pro-api. To use it, set
+#     in your .env:
+#       FINCLARIX_TRANSLATE_PROVIDER=deepl
+#       DEEPL_API_KEY=your-free-key
+#     (Leave both unset to keep using the zero-setup Google backend.)
