@@ -105,9 +105,24 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
  
  
+_UNICODE_TO_LATIN1 = str.maketrans({
+    "…": "...",   # … ellipsis
+    "—": "--",    # — em dash
+    "–": "-",     # – en dash
+    "“": '"',     # " left double quotation mark
+    "”": '"',     # " right double quotation mark
+    "‘": "'",     # ' left single quotation mark
+    "’": "'",     # ' right single quotation mark
+    "€": "EUR",   # € euro sign (outside Latin-1 range)
+    " ": " ",     # non-breaking space
+    "•": "-",     # • bullet
+    "−": "-",     # − minus sign
+})
+
+
 def _pdf_safe(text: str) -> str:
-    """Make `text` safe for fpdf2's Latin-1-only core fonts."""
-    return text.encode("latin-1", "replace").decode("latin-1")
+    """Substitute common out-of-range Unicode chars, then encode to Latin-1."""
+    return text.translate(_UNICODE_TO_LATIN1).encode("latin-1", "replace").decode("latin-1")
  
  
 def generate_report_pdf(
