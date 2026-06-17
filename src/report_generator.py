@@ -221,9 +221,9 @@ def generate_report_pdf(
                     if not value:
                         continue
                     pdf.set_font("Helvetica", "B", 10)
-                    pdf.multi_cell(0, 5.5, _pdf_safe(f"{label}:"))
+                    pdf.multi_cell(190, 5.5, _pdf_safe(f"{label}:"))
                     pdf.set_font("Helvetica", "", 10)
-                    pdf.multi_cell(0, 5.5, _pdf_safe(value))
+                    pdf.multi_cell(190, 5.5, _pdf_safe(value))
                     pdf.ln(1)
 
             pdf.ln(4)
