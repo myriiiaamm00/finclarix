@@ -921,26 +921,34 @@ with main_col:
         st.markdown(_build_results_html(by_level, exposure_items, _lang), unsafe_allow_html=True)
         st.markdown('<div class="divider-line" style="margin-top:32px;"></div>', unsafe_allow_html=True)
 
-        # The downloadable report stays in English (deterministic baseline,
-        # plus any AI-polished overlay) — it's a reference document, and
-        # re-translating the full text of every clause on every render just
-        # to build a string that's discarded unless downloaded would be
-        # wasted work. (In-app display, where translation actually matters
-        # for reading comprehension, is handled live in _build_results_html.)
-        # Re-merge each clause's AI overlay here, since `results[i]["breakdown"]`
-        # now intentionally stores only the untouched deterministic baseline
-        # (see the analysis loop for why) — the merge used to happen there.
-        report_results = [
-            {**r, "breakdown": merge_breakdown(dict(r["breakdown"]), r.get("ai_breakdown"))}
-            for r in results
-        ]
-        # Per the project's business plan, the downloadable report is a PDF
-        # (not Markdown) — `generate_report_pdf()` mirrors the same English
-        # report structure (summary, exposure summary, clauses by risk level)
-        # but renders it as a polished, ready-to-print PDF via fpdf2 (a free,
-        # pure-Python PDF library — see src/report_generator.py for details
-        # on why it stays English and how non-Latin-1 text degrades safely).
-        report_pdf = generate_report_pdf(report_results, source_name, exposure_items)
+        # Build the PDF breakdown in the selected language — same logic as
+        # _build_results_html: AI overlay if available (already localised),
+        # otherwise machine-translate the English baseline on the fly.
+        # translate_text() results are cached, so any clause already rendered
+        # on screen is free; only a fresh download with a new language pays
+        # the network round-trip.
+        def _pdf_breakdown(clause: dict) -> dict:
+            bd = dict(clause["breakdown"])
+            if clause.get("localized_by_ai") and clause.get("ai_breakdown"):
+                bd = merge_breakdown(bd, clause["ai_breakdown"])
+            elif _lang != "English":
+                for key in ("explanation", "why_it_matters", "financial_impact", "suggested_action"):
+                    if bd.get(key):
+                        translated, _ = translate_text(bd[key], _lang)
+                        bd[key] = translated
+            return bd
+
+        report_results = [{**r, "breakdown": _pdf_breakdown(r)} for r in results]
+
+        # Translate exposure item text to match the selected language.
+        pdf_exposure = exposure_items
+        if _lang != "English" and exposure_items:
+            pdf_exposure = []
+            for item in exposure_items:
+                translated_text, _ = translate_text(item["text"], _lang)
+                pdf_exposure.append({**item, "text": translated_text})
+
+        report_pdf = generate_report_pdf(report_results, source_name, pdf_exposure, lang=_lang)
         safe_name = source_name.replace(".pdf", "").replace(" ", "_")
         _, dl_col, _ = st.columns([1, 2, 1])
         with dl_col:
