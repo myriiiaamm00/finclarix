@@ -179,7 +179,7 @@ def generate_report_pdf(
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Helvetica", "", 11)
         for item in exposure_items:
-            pdf.multi_cell(0, 6, _pdf_safe(f"-  {item['text']}"))
+            pdf.multi_cell(0, 190, _pdf_safe(f"-  {item['text']}"))
         pdf.ln(3)
 
     # ── Clauses, grouped by risk level ───────────────────────────────────────
