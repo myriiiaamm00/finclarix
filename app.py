@@ -823,81 +823,84 @@ with main_col:
 
                 results: list[dict] = []
                 ai_enabled = _use_ai and bool(os.getenv("ANTHROPIC_API_KEY"))
-                progress = st.progress(0, text="Scanning clauses…")
 
-                # Deterministic, rule-based pass: locate the recurring monthly
-                # rent figure once so per-clause exposures (termination,
-                # renewal, …) can be derived from it.
-                rent = find_rent_amount(clauses)
+                with st.spinner("Analysing your contract…"):
+                    progress = st.progress(0, text="Scanning clauses…")
 
-                for i, clause_text in enumerate(clauses):
-                    matches = detect_risks(clause_text, keywords_db)
-                    risk = score_clause(matches)
-                    kws = all_keywords(matches)
+                    # Deterministic, rule-based pass: locate the recurring monthly
+                    # rent figure once so per-clause exposures (termination,
+                    # renewal, …) can be derived from it.
+                    rent = find_rent_amount(clauses)
 
-                    # Deterministic four-part breakdown — always computed, so
-                    # the app works fully without an API key. This is the
-                    # LANGUAGE-INDEPENDENT baseline: we deliberately store it
-                    # (plus a few status flags below) rather than any
-                    # already-rendered, language-specific text. Baking
-                    # translated strings or notices into `results` here would
-                    # freeze them at whatever language was selected at
-                    # analysis time — switching the language afterwards would
-                    # then have no effect until the user re-clicked "Analyse
-                    # Contract". Instead, the actual translation/notice text
-                    # is resolved fresh on every render in _build_results_html
-                    # (see the comments there), based on whatever `_lang` is
-                    # *right now* — so flipping the language selector updates
-                    # every explanation immediately, exactly as required.
-                    breakdown = build_breakdown(clause_text, risk, kws, rent)
-                    ai_breakdown_overlay = None
-                    ai_note_key = None      # i18n key for a translatable notice
-                    ai_note_extra = ""      # extra (English) detail, e.g. an exception message
-                    localized_by_ai = False
+                    for i, clause_text in enumerate(clauses):
+                        matches = detect_risks(clause_text, keywords_db)
+                        risk = score_clause(matches)
+                        kws = all_keywords(matches)
 
-                    if risk != "Informational":
-                        if ai_enabled:
-                            try:
-                                ai_breakdown = explain_clause(clause_text, risk, kws, _lang)
-                                if ai_breakdown is not None:
-                                    # The (paid) Claude path already produced
-                                    # wording in the selected language — store
-                                    # it as an overlay so render-time merging
-                                    # (and skipping machine translation) still
-                                    # works correctly even after a later
-                                    # language switch re-renders this clause.
-                                    ai_breakdown_overlay = ai_breakdown
-                                    localized_by_ai = True
-                                else:
-                                    ai_note_key = "ai_unavailable"
-                            except Exception as e:
-                                ai_note_key = "ai_error"
-                                ai_note_extra = str(e)
-                        elif not os.getenv("ANTHROPIC_API_KEY"):
-                            # No API key configured at all — make that explicit
-                            # on every risky clause. The actual (translated)
-                            # notice text is resolved at render time via
-                            # t("ai_disabled_notice", <current lang>).
-                            ai_note_key = "ai_disabled_notice"
+                        # Deterministic four-part breakdown — always computed, so
+                        # the app works fully without an API key. This is the
+                        # LANGUAGE-INDEPENDENT baseline: we deliberately store it
+                        # (plus a few status flags below) rather than any
+                        # already-rendered, language-specific text. Baking
+                        # translated strings or notices into `results` here would
+                        # freeze them at whatever language was selected at
+                        # analysis time — switching the language afterwards would
+                        # then have no effect until the user re-clicked "Analyse
+                        # Contract". Instead, the actual translation/notice text
+                        # is resolved fresh on every render in _build_results_html
+                        # (see the comments there), based on whatever `_lang` is
+                        # *right now* — so flipping the language selector updates
+                        # every explanation immediately, exactly as required.
+                        breakdown = build_breakdown(clause_text, risk, kws, rent)
+                        ai_breakdown_overlay = None
+                        ai_note_key = None      # i18n key for a translatable notice
+                        ai_note_extra = ""      # extra (English) detail, e.g. an exception message
+                        localized_by_ai = False
 
-                    results.append(
-                        {
-                            "text": clause_text,
-                            "risk": risk,
-                            "keywords": kws,
-                            "breakdown": breakdown,
-                            "ai_breakdown": ai_breakdown_overlay,
-                            "localized_by_ai": localized_by_ai,
-                            "ai_note_key": ai_note_key,
-                            "ai_note_extra": ai_note_extra,
-                        }
-                    )
-                    progress.progress(
-                        (i + 1) / len(clauses),
-                        text=f"Scanning clause {i + 1} / {len(clauses)}…",
-                    )
+                        if risk != "Informational":
+                            if ai_enabled:
+                                try:
+                                    ai_breakdown = explain_clause(clause_text, risk, kws, _lang)
+                                    if ai_breakdown is not None:
+                                        # The (paid) Claude path already produced
+                                        # wording in the selected language — store
+                                        # it as an overlay so render-time merging
+                                        # (and skipping machine translation) still
+                                        # works correctly even after a later
+                                        # language switch re-renders this clause.
+                                        ai_breakdown_overlay = ai_breakdown
+                                        localized_by_ai = True
+                                    else:
+                                        ai_note_key = "ai_unavailable"
+                                except Exception as e:
+                                    ai_note_key = "ai_error"
+                                    ai_note_extra = str(e)
+                            elif not os.getenv("ANTHROPIC_API_KEY"):
+                                # No API key configured at all — make that explicit
+                                # on every risky clause. The actual (translated)
+                                # notice text is resolved at render time via
+                                # t("ai_disabled_notice", <current lang>).
+                                ai_note_key = "ai_disabled_notice"
 
-                progress.empty()
+                        results.append(
+                            {
+                                "text": clause_text,
+                                "risk": risk,
+                                "keywords": kws,
+                                "breakdown": breakdown,
+                                "ai_breakdown": ai_breakdown_overlay,
+                                "localized_by_ai": localized_by_ai,
+                                "ai_note_key": ai_note_key,
+                                "ai_note_extra": ai_note_extra,
+                            }
+                        )
+                        progress.progress(
+                            (i + 1) / len(clauses),
+                            text=f"Scanning clause {i + 1} / {len(clauses)}…",
+                        )
+
+                    progress.empty()
+
                 st.session_state["results"] = results
                 st.session_state["source_name"] = source_name
                 # Stored as plain English — see _build_exposure_summary_html,
